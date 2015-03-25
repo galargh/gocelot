@@ -41,12 +41,16 @@ func nodeSeq(path string) (*node, *node) {
 	}
 	for end, letter := range path {
 		switch isParam {
-		case false && letter == ':':
-			extendSeq(end)
-			isParam = true
-		case true && letter == '/':
-			extendSeq(end + 1)
-			isParam = false
+		case false:
+			if letter == ':' {
+				extendSeq(end)
+				isParam = true
+			}
+		case true:
+			if letter == '/' {
+				extendSeq(end + 1)
+				isParam = false
+			}
 		}
 	}
 	if start != len(path) {
