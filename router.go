@@ -6,54 +6,45 @@ import (
 )
 
 type Router struct {
-	trees []*methodTree
+	tree *tree
 	paramsPath string
+	NotFound http.Handler
+	MethodNotAllowed http.Handler
 }
 
 func New() *Router {
-	return &Router{nil, "urlParams"}
-}
-
-func (r *Router) addTree(method string) *tree {
-	for _, mt := range r.trees {
-		if mt.method == method {
-			return mt.getTree()
-		}
-	}
-	mt := newMethodTree(method)
-	r.trees = append(r.trees, mt)
-	return mt.t
-}
-
-func (r *Router) getTree(method string) *tree {
-	for _, mt := range r.trees {
-		if mt.method == method {
-			return mt.getTree()
-		}
-	}
-	return nil
+	return &Router{newTree(), "urlParams", nil, nil}
 }
 
 func (r *Router) Handle(method, path string, handler http.Handler) {
-	r.addTree(method).addRoot().add(path).handler = handler
+	r.tree.root.add(path).handle(method, handler)
 }
 
 func (r *Router) ServeHTTP(response http.ResponseWriter, request *http.Request) {
 	path, method := request.URL.Path, request.Method
-	tree := r.getTree(method)
-	if tree != nil {
-		root := tree.getRoot()
-		if root != nil {
-			node, params := root.get(path, 0)
-			if node != nil && node.handler != nil {
+	node, params := r.tree.root.get(path, 0)
+	if node != nil{
+		if node.handlers != nil {
+			handler := node.handlers.get(method)
+			if handler != nil {
 				if params != nil {
 					if request.Form == nil {
 						request.Form = url.Values{}
 					}
 					request.Form[r.paramsPath] = params
 				}
-				node.handler.ServeHTTP(response, request)
+				handler.ServeHTTP(response, request)
+				return
+			}
+			if r.MethodNotAllowed != nil {
+				r.MethodNotAllowed.ServeHTTP(response, request)
+				return
 			}
 		}
+	}
+	if r.NotFound != nil {
+		r.NotFound.ServeHTTP(response, request)
+	} else {
+		http.NotFound(response, request)
 	}
 }

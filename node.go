@@ -7,7 +7,7 @@ import (
 type node struct {
 	path string
 	next []*node
-	handler http.Handler
+	handlers *handlerArray
 }
 
 func newNode() *node {
@@ -112,9 +112,13 @@ func (n *node) add(path string) *node {
 		// params have to match entirely
 		if path[diff] == ':' {
 			for _, next := range n.next {
-				if next.path[0] == ':' &&
-					next.path == slice(path, diff, len(next.path)) {
-					return next.add(path[diff:])
+				if next.path[0] == ':' {
+					if next.path == slice(path, diff, len(next.path)) {
+						if next.path[len(next.path) - 1] == '/' || 
+							len(path) == diff + len(next.path) {
+							return next.add(path[diff:])
+						}
+					}
 				}
 			}
 		} else {
@@ -136,11 +140,11 @@ func (n *node) add(path string) *node {
 		remainderNode := newNode()
 		remainderNode.path = n.path[diff:]
 		remainderNode.next = n.next
-		remainderNode.handler = n.handler
+		remainderNode.handlers = n.handlers
 
 		n.path = n.path[:diff]
 		n.next = []*node{remainderNode}
-		n.handler = nil
+		n.handlers = nil
 
 		return n
 	default:
@@ -149,110 +153,112 @@ func (n *node) add(path string) *node {
 		remainderNode := newNode()
 		remainderNode.path = n.path[diff:]
 		remainderNode.next = n.next
-		remainderNode.handler = n.handler
+		remainderNode.handlers = n.handlers
 
 		first, last := nodeSeq(path[diff:])
 
 		n.path = n.path[:diff]
 		n.next = []*node{remainderNode, first}
-		n.handler = nil
+		n.handlers = nil
 
 		return last
 	}
 }
 
-// nextByte returns index of the next c occurence in s
+// indexOf returns index of the next c occurence in s
 // or len(s) if not found
-func nextByte(s string, c byte) int {
-	n := 0
-	for n < len(s) && s[n] != c {
-		n++
+func indexOf(s string, c rune) int {
+	for i, letter := range s {
+		if letter == c {
+			return i
+		}
 	}
-	return n
+	return len(s)
 }
 
 func (n *node) get(path string, paramsCount int) (*node, []string) {
-	//log.Print(path, " ", n.path, " ", paramsCount)
 	switch n.path[0] {
 	case ':':
+		paramLen := indexOf(path, '/')
 		// current node is a param
-		paramLen := nextByte(path, '/')
-		if paramLen + 1 >= len(path) {
-			// param is the last argument
-			// +1 to account for trailing slash
+		if n.path[len(n.path) - 1] != '/' {
+			if paramLen == len(path) {
+				paramsPos := (paramsCount + 1) * 2
+				paramsList := make([]string, paramsPos)
+				paramsList[paramsPos - 2] = n.path[1:]
+				paramsList[paramsPos - 1] = path
+				return n, paramsList
+			}
+			// path exceeds the pattern
+			return nil, nil
+		}
+		if paramLen == len(path) {
+			// pattern exceeds the path
+			return nil, nil
+		}
+		if paramLen + 1 == len(path) {
 			paramsPos := (paramsCount + 1) * 2
 			paramsList := make([]string, paramsPos)
 			paramsList[paramsPos - 2] = n.path[1:len(n.path) - 1]
 			paramsList[paramsPos - 1] = path[:paramLen]
-
 			return n, paramsList
-		} else {
-			// param is not the last argument
-			// check the current next for match
-			for _, next := range n.next {
-				firstLetter := next.path[0]
-				if firstLetter == ':' || firstLetter == path[paramLen + 1] {
-					node, paramsList := next.get(path[paramLen + 1:],
-						paramsCount + 1)
-					if node != nil {
-						// exhaustive path was found
-						// add param
-						paramsPos := (paramsCount + 1) * 2
-						if (paramsList == nil) {
-							paramsList = make([]string, paramsPos)
-						}
-						paramsList[paramsPos - 2] = n.path[1:len(n.path) - 1]
-						paramsList[paramsPos - 1] = path[:paramLen]
-						return node, paramsList
+		}
+
+		// check the current next for match
+		for _, next := range n.next {
+			firstLetter := next.path[0]
+			if firstLetter == ':' || firstLetter == path[paramLen + 1] {
+				node, paramsList := next.get(path[paramLen + 1:],
+					paramsCount + 1)
+				if node != nil {
+					// exhaustive path was found
+					// add param
+					paramsPos := (paramsCount + 1) * 2
+					if (paramsList == nil) {
+						paramsList = make([]string, paramsPos)
 					}
+					paramsList[paramsPos - 2] = n.path[1:len(n.path) - 1]
+					paramsList[paramsPos - 1] = path[:paramLen]
+					return node, paramsList
 				}
 			}
-			// no exhaustive path
-			return nil, nil
 		}
+		// no exhaustive path
+		return nil, nil
 	default:
 		// current node is regular
-		diff := lcp(n.path, path)
-
-		if len(path) == diff && len(n.path) == diff {
-			// paths are equal
-			if path[len(path) - 1] == '/' {
-				// paths have trailing slash
-				return n, nil
-			} else {
-				//check for trailing slash
-				for _, next := range n.next {
-					if next.path[0] == '/' && len(next.path) == 1 {
-						return next, nil
-					}
-				}
-				return nil, nil
-			}
-		}
-		switch diff {
-		case len(n.path):
-			// check for remainder of the path
-			canParam := path[diff - 1] == '/'
-			for _, next := range n.next {
-				firstLetter := next.path[0]
-				if firstLetter == path[diff] || (canParam && firstLetter == ':') {
-					node, paramsList := next.get(path[diff:], paramsCount)
-					if node != nil {
-						return node, paramsList
-					}
-				}
-			}
-			return nil, nil
-		case len(path):
-			// path is different
-			if n.path[diff] == '/' && len(n.path) == diff + 1 {
-				// path in the node differs only by trailing slash
-				return n, nil
-			} else {
-				return nil, nil
-			}
-		default:
+		if len(path) < len(n.path) {
+			//no match
 			return nil, nil
 		}
+		if len(path) == len(n.path) {
+			//possible match
+			if path == n.path {
+				return n, nil
+			}
+			return nil, nil
+		}
+		if path[:len(n.path)] != n.path {
+			return nil, nil
+		}
+		//if it's a begining of a new segment, can match param next
+		canParam := path[len(n.path) - 1] == '/'
+		for _, next := range n.next {
+			firstLetter := next.path[0]
+			if firstLetter == path[len(n.path)] || (canParam && firstLetter == ':') {
+				node, paramsList := next.get(path[len(n.path):], paramsCount)
+				if node != nil {
+					return node, paramsList
+				}
+			}
+		}
+		return nil, nil
 	}
+}
+
+func (n *node) handle(method string, handler http.Handler) {
+	if n.handlers == nil {
+		n.handlers = newHandlerArray()
+	}
+	n.handlers.add(method, handler)
 }
