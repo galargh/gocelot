@@ -1,27 +1,56 @@
+// Copyright 2015 Piotr Galar. All rights reserved.
+// Based on the path package, Copyright 2009 The Go Authors.
+// Use of this source code is governed by a BSD-style license that can be found
+// in the LICENSE file.
+
 package gocelot
 
 import (
 	"net/http"
+	"net/url"
 )
 
+// node represents a prefix tree node and is used for routing.
+// It has a path of the current node, a list of next nodes and a handlerArray
+// for the path.
 type node struct {
 	path string
 	next []*node
 	handlers *handlerArray
 }
 
+// newNode is a function which returns a new empty node.
 func newNode() *node {
 	return &node{}
 }
 
-// nodeSeqFromPath returns the first and the last node of the sequence.
+/*
+debugging nodes
+
+var nodes []*node
+
+func newNode() *node {
+	node := &node{}
+	nodes = append(nodes, node)
+	return node
+}
+
+func Print() {
+	for _, node := range nodes {
+		log.Print(node.path)
+	}
+}
+*/
+
+// nodeSeqFromPath is a function which returns the first and the last node of
+// the sequence.
 // If the path doesn't contain params(':'), the first and the last nodes are
 // the same.
 // All the params(':') are stored in seperate nodes.
 // Eg.
 // nodeSeqFromPath('/path/:param/end/')
-// returns node('/path/'), node('end/')
-// and the sequence is node('/path') -> node(':param/') -> node('end/')
+// returns node('/path/'), node('/end/')
+// and the sequence is node('/path') -> node(':param') -> node('/end/')
 func nodeSeq(path string) (*node, *node) {
 	first := newNode()
 	last := first
@@ -38,28 +67,25 @@ func nodeSeq(path string) (*node, *node) {
 			}
 		}
 		start = end
+		isParam = !isParam
 	}
 	for end, letter := range path {
 		switch isParam {
 		case false:
 			if letter == ':' {
 				extendSeq(end)
-				isParam = true
 			}
 		case true:
 			if letter == '/' {
-				extendSeq(end + 1)
-				isParam = false
+				extendSeq(end)
 			}
 		}
 	}
-	if start != len(path) {
-		extendSeq(len(path))
-	}
+	extendSeq(len(path))
 	return first, last
 }
 
-// min returns the minimum of two intergers
+// min is a helper function which returns the minimum of two intergers.
 func min(a, b int) int {
 	if a < b {
 		return a
@@ -67,7 +93,7 @@ func min(a, b int) int {
 	return b
 }
 
-// lcp returns the longest common prefix of 2 words
+// lcp is a helper function which returns the longest common prefix of a and b.
 func lcp(a, b string) int {
 	lcp, minLen := 0, min(len(a), len(b))
 	for lcp < minLen && a[lcp] == b[lcp] {
@@ -76,17 +102,12 @@ func lcp(a, b string) int {
 	return lcp
 }
 
-// slice returns a slice of given length starting at start of the given string
-func slice(path string, start, length int) string {
-	return path[start:min(start+length, len(path))]
-}
-
-// addPath adds the path to the node and returns the last node which belongs
-// to the path being added.
+// add is a method which adds the path to the node and returns the last node
+// which belongs to the added path.
 // The path in the node and the path which is added should have a common prefix.
 // Otherwise after addition the current node will contain an empty path.
 // Eg.
-// node('/path/').AddPath('/paths/')
+// node('/path/').add('/paths/')
 // returns node('s/')
 // and the result sequence is
 // node('/path') -> node('/')
@@ -94,53 +115,39 @@ func slice(path string, start, length int) string {
 // Note that different params are stored in different nodes.
 // Eg.
 // For starting sequence node('/path/') -> node(':param1/') -> node('end/')
-// node('/path/').Add('/path/param2/finish/')
-// returns node('finish/')
+// node('/path/').add('/path/:param2/finish/')
+// returns node('/finish/')
 // and the result sequence is
-// node('/path/') -> node(':param1/') -> node('end/')
-// node('/path/') -> node(':param2/') -> node('finish/')
+// node('/path/') -> node(':param1') -> node('/end/')
+// node('/path/') -> node(':param2') -> node('/finish/')
 // NOT
 // node('/path/') -> node(':param') -> node('1/end/')
 // node('/path/') -> node(':param') -> node('2/finish/')
 func (n *node) add(path string) *node {
 	diff := lcp(n.path, path)
-	// The given path already exists
-	if len(n.path) == diff && len(path) == diff {
+	if diff == len(n.path) && diff == len(path) {
+		// the paths are equal, no new nodes were created
 		return n
 	}
-	switch diff {
-	case len(n.path):
-		// diff < len(path)
-		// split the path and add to next
-		// check the current next for match first
-		// params have to match entirely
-		if path[diff] == ':' {
-			for _, next := range n.next {
-				if next.path[0] == ':' {
-					if next.path == slice(path, diff, len(next.path)) {
-						if next.path[len(next.path) - 1] == '/' || 
-							len(path) == diff + len(next.path) {
-							return next.add(path[diff:])
-						}
-					}
-				}
-			}
-		} else {
-			for _, next := range n.next {
-				if next.path[0] == path[diff] {
-					return next.add(path[diff:])
+	if n.path[0] == ':' {
+		// the node.path is a param
+		if diff == len(path) || path[diff] != '/' {
+			// the params are different, have to rollback
+			return nil
+		}
+	}
+	if diff == len(n.path) {
+		// n.path matches exactly, have to search next nodes
+		for _, next := range n.next {
+			if next.path[0] == path[diff] {
+				node := next.add(path[diff:])
+				if node != nil {
+					return node
 				}
 			}
 		}
-		// add new node if no match was found
-		first, last := nodeSeq(path[diff:])
-
-		n.next = append(n.next, first)
-
-		return last
-	case len(path):
-		// diff < len(n.path)
-		// split the n.path and set the node to path
+	} else {
+		// n.path doesn't match exactly, have to split it
 		remainderNode := newNode()
 		remainderNode.path = n.path[diff:]
 		remainderNode.next = n.next
@@ -150,27 +157,19 @@ func (n *node) add(path string) *node {
 		n.next = []*node{remainderNode}
 		n.handlers = nil
 
-		return n
-	default:
-		// diff < len(n.path) && diff < len(path)
-		// split the n.path into two
-		remainderNode := newNode()
-		remainderNode.path = n.path[diff:]
-		remainderNode.next = n.next
-		remainderNode.handlers = n.handlers
-
-		first, last := nodeSeq(path[diff:])
-
-		n.path = n.path[:diff]
-		n.next = []*node{remainderNode, first}
-		n.handlers = nil
-
-		return last
+		if diff == len(path) {
+			// path matches the new n.path exactly
+			return n
+		}
 	}
+	// path has to be split at diff
+	first, last := nodeSeq(path[diff:])
+	n.next = append(n.next, first)
+	return last
 }
 
-// indexOf returns index of the next c occurence in s
-// or len(s) if not found
+// indexOf function returns index of the next occurence of c in s
+// or len(s) if c not found
 func indexOf(s string, c rune) int {
 	for i, letter := range s {
 		if letter == c {
@@ -180,86 +179,85 @@ func indexOf(s string, c rune) int {
 	return len(s)
 }
 
-func (n *node) get(path string, paramsCount int) (*node, []string) {
-	switch n.path[0] {
-	case ':':
-		paramLen := indexOf(path, '/')
-		// current node is a param
-		if n.path[len(n.path) - 1] != '/' {
-			if paramLen == len(path) {
-				paramsPos := (paramsCount + 1) * 2
-				paramsList := make([]string, paramsPos)
-				paramsList[paramsPos - 2] = n.path[1:]
-				paramsList[paramsPos - 1] = path
-				return n, paramsList
-			}
-			// path exceeds the pattern
-			return nil, nil
-		}
-		if paramLen == len(path) {
-			// pattern exceeds the path
-			return nil, nil
-		}
-		if paramLen + 1 == len(path) {
-			paramsPos := (paramsCount + 1) * 2
-			paramsList := make([]string, paramsPos)
-			paramsList[paramsPos - 2] = n.path[1:len(n.path) - 1]
-			paramsList[paramsPos - 1] = path[:paramLen]
-			return n, paramsList
-		}
+/*
+alternative params return pattern which uses one alloc per request with params
 
-		// check the current next for match
-		for _, next := range n.next {
-			firstLetter := next.path[0]
-			if firstLetter == ':' || firstLetter == path[paramLen + 1] {
-				node, paramsList := next.get(path[paramLen + 1:],
-					paramsCount + 1)
-				if node != nil {
-					// exhaustive path was found
-					// add param
-					paramsPos := (paramsCount + 1) * 2
-					if (paramsList == nil) {
-						paramsList = make([]string, paramsPos)
-					}
-					paramsList[paramsPos - 2] = n.path[1:len(n.path) - 1]
-					paramsList[paramsPos - 1] = path[:paramLen]
-					return node, paramsList
-				}
-			}
+func addParam(paramList []string, paramCount int, key, value string) []string {
+	paramPos := (paramCount + 1) * 2
+	if paramList == nil {
+		paramList = make([]string, paramPos)
+	}
+	paramList[paramPos - 2] = key
+	paramList[paramPos - 1] = value
+	return paramList
+}
+*/
+
+// addParam function adds key/value to request.Form if handler exists.
+// It creates request.Form if necessary.
+// request.Form is map[string][]string.
+// addParam puts value at the end of request.Form[key].
+func addParam(request *http.Request, handler http.Handler, key, value string) {
+	if handler != nil {
+		if request.Form == nil {
+			request.Form = url.Values{}
 		}
-		// no exhaustive path
-		return nil, nil
-	default:
-		// current node is regular
-		if len(path) < len(n.path) {
-			//no match
-			return nil, nil
-		}
-		if len(path) == len(n.path) {
-			//possible match
-			if path == n.path {
-				return n, nil
-			}
-			return nil, nil
-		}
-		if path[:len(n.path)] != n.path {
-			return nil, nil
-		}
-		//if it's a begining of a new segment, can match param next
-		canParam := path[len(n.path) - 1] == '/'
-		for _, next := range n.next {
-			firstLetter := next.path[0]
-			if firstLetter == path[len(n.path)] || (canParam && firstLetter == ':') {
-				node, paramsList := next.get(path[len(n.path):], paramsCount)
-				if node != nil {
-					return node, paramsList
-				}
-			}
-		}
-		return nil, nil
+		request.Form.Add(key, value)
 	}
 }
 
+// get is a method which returns a http.Handler for the specified path/method
+// if one exists.
+// It also returns a boolean which is true if the specified path exists.
+func (n *node) get(path, method string,
+	request *http.Request) (http.Handler, bool) {
+	
+	if n.path[0] == ':' {
+		// n.path is a param, try matching a param in the path
+		paramLen := indexOf(path, '/')
+		if paramLen == len(path) {
+			// param is the last segment of the path
+			handler := n.handlers.get(method)
+			addParam(request, handler, n.path[1:], path)
+			// maybe return handler, n.handlers != nil
+			return handler, true
+		}
+		// param is not the last segment, have to check next for next segments
+		for _, next := range n.next {
+			if next.path[0] == '/' {
+				handler, pathFound := next.get(path[paramLen:], method, request)
+				if pathFound {
+					// if path was found, try adding param to the request
+					addParam(request, handler, n.path[1:], path[:paramLen])
+					return handler, pathFound
+				}
+			}
+		}
+	} else if len(path) >= len(n.path) && n.path == path[:len(n.path)] {
+		// n.path matches path exactly to n.paths length
+		if len(path) == len(n.path) {
+			// n.path matched path exactly
+			handler := n.handlers.get(method)
+			return handler, true
+		}
+		// path is longer than n.path, have to check next for next segments
+		for _, next := range n.next {
+			if next.path[0] == path[len(n.path)] || next.path[0] == ':' {
+				// next segment matches path or is a param
+				handler, pathFound := next.get(path[len(n.path):], method,
+					request)
+				if pathFound {
+					return handler, pathFound
+				}
+			}
+		}
+	}
+	// no path was found at this branch
+	return nil, false
+}
+
+// handle is a method which adds methodHandler to handlers of the node.
+// It creates new handlerArray if necessary.
 func (n *node) handle(method string, handler http.Handler) {
 	if n.handlers == nil {
 		n.handlers = newHandlerArray()
