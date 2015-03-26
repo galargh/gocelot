@@ -1,8 +1,3 @@
-// Copyright 2015 Piotr Galar. All rights reserved.
-// Based on the path package, Copyright 2009 The Go Authors.
-// Use of this source code is governed by a BSD-style license that can be found
-// in the LICENSE file.
-
 // TODO:
 //  merging trees
 //  panic handler
@@ -54,7 +49,7 @@ func (r *Router) HandleFunc(method, path string,
 // It routes the path/method to the correct handler or returns an error.
 func (r *Router) ServeHTTP(response http.ResponseWriter,
 	request *http.Request) {
-	
+
 	path, method := request.URL.Path, request.Method
 	handler, pathFound := r.tree.get(path, method, request)
 	if handler != nil {

@@ -1,8 +1,3 @@
-// Copyright 2015 Piotr Galar. All rights reserved.
-// Based on the path package, Copyright 2009 The Go Authors.
-// Use of this source code is governed by a BSD-style license that can be found
-// in the LICENSE file.
-
 package gocelot
 
 import (
@@ -211,7 +206,7 @@ func addParam(request *http.Request, handler http.Handler, key, value string) {
 // It also returns a boolean which is true if the specified path exists.
 func (n *node) get(path, method string,
 	request *http.Request) (http.Handler, bool) {
-	
+
 	if n.path[0] == ':' {
 		// n.path is a param, try matching a param in the path
 		paramLen := indexOf(path, '/')
