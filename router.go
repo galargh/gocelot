@@ -1,7 +1,6 @@
 // TODO:
 //  merging trees
 //  panic handler
-//  testing
 //  readme
 
 // Package gocelot provides a simple url router.

@@ -212,6 +212,9 @@ func (n *node) get(path, method string,
 		paramLen := indexOf(path, '/')
 		if paramLen == len(path) {
 			// param is the last segment of the path
+			if n.handlers == nil {
+				return nil, false
+			}
 			handler := n.handlers.get(method)
 			addParam(request, handler, n.path[1:], path)
 			// maybe return handler, n.handlers != nil
@@ -232,8 +235,10 @@ func (n *node) get(path, method string,
 		// n.path matches path exactly to n.paths length
 		if len(path) == len(n.path) {
 			// n.path matched path exactly
-			handler := n.handlers.get(method)
-			return handler, true
+			if n.handlers == nil {
+				return nil, false
+			}
+			return n.handlers.get(method), true
 		}
 		// path is longer than n.path, have to check next for next segments
 		for _, next := range n.next {
