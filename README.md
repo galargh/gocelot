@@ -28,7 +28,7 @@ map[string][]string where the key is the parameter name and the value is an
 array of parameter values. The parameter values are put in the map only if a
 matching path/method were found. They are put in the reverse order.
 Eg.
-'''
+```
 let path = "/path/:key/:key/:key/:otherKey"
 if url = "/path/1/2/3/4" matches the path
 	handler is called with
@@ -36,7 +36,7 @@ if url = "/path/1/2/3/4" matches the path
 			"key": ["3", "2", "1"],
 			"otherKey": ["4"]
 		}
-'''
+```
 
 ##### How are routes added to the router?
 Router's routes are stored in a special prefix tree. A router holds a pointer
@@ -62,13 +62,13 @@ Note that params receive a special treatment in the process of addition. The
 process ensures that if a param name is stored in the node, then it is the only
 thing stored in this node.
 Eg.
-'''
+```
 adding "/path/:key/:key/path/:key"
 will create tree "/" -> "path/" -> ":key" -> "/" -> ":key" -> "/path/" -> ":key"
 whereas
 adding "/path/path/path/path/path"
 will create tree "/" -> "path/path/path/path/path"
-'''
+```
 
 ##### How are handlers stored?
 Each node has a pointer to an array of method/handler pairs.
