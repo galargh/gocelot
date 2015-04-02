@@ -87,4 +87,107 @@ specified method. If the MethodNotAllowed is not specified, the router calls
 NotFound handler in both cases. By default the router uses http.NotFound as the
 NotFound handler.
 
-TODO usage, examples,...
+### Usage
+
+To import:
+```go
+import "github.com/gfjalar/gocelot"
+```
+
+To create new router:
+```go
+router := gocelot.New()
+```
+
+To set NotFound/MethodNotAllowed handlers:
+```go
+router.NotFound = handler
+router.MethodNotAllowed = handler
+```
+
+To add path, method, handler:
+```go
+router.Handle("GET", "/path", handler)
+```
+
+To add path, method, handler by handler function:
+```go
+router.HandleFunc("GET", "/path", handlerFunc)
+```
+
+To use router:
+```go
+http.ListenAndServe(":8080", router)
+```
+
+### Example:
+
+```go
+package main
+
+import (
+	"bytes"
+	"net/http"
+
+	"github.com/gfjalar/gocelot"
+)
+
+type SimpleHandler struct {
+	code int
+	message string
+}
+
+func (h *SimpleHandler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
+	response.WriteHeader(h.code)
+	response.Write([]byte(h.message))
+}
+
+type MultiParamsHandler struct {
+	code int
+	message string
+	paramsNames []string
+}
+
+func (h *MultiParamsHandler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
+	buffer := bytes.NewBufferString(h.message)
+	for _, paramName := range h.paramsNames {
+		buffer.WriteString(" ")
+		buffer.WriteString(paramName)
+		buffer.WriteString(" ")
+		buffer.WriteString(request.Form.Get(paramName))
+	}
+	response.WriteHeader(h.code)
+	response.Write(buffer.Bytes())
+}
+
+func UserHandlerFunc(response http.ResponseWriter, request *http.Request) {
+	userId := request.Form.Get("id")
+	response.WriteHeader(200)
+	response.Write([]byte("/users/:id endpoint with id " + userId))
+}
+
+func main() {
+	router := gocelot.New()
+
+	router.NotFound = &SimpleHandler{404, "404 Not Found"}
+	router.MethodNotAllowed = &SimpleHandler{405, "405 Method Not Allowed"}
+
+	router.HandleFunc("GET", "/users", func(response http.ResponseWriter, request *http.Request) {
+		response.WriteHeader(200)
+		response.Write([]byte("/users endpoint"))
+	})
+	router.Handle("GET", "/users/0", &SimpleHandler{200, "/users/0 endpoint matching the specific id = 0"})
+	router.HandleFunc("GET", "/users/:id", UserHandlerFunc)
+	router.Handle("GET", "/users/:id/:param", &MultiParamsHandler{200, "/users/:id/:param endpoint with", []string{"id", "param"}})
+
+	http.ListenAndServe(":8080", router)
+}
+```
+
+### TODO
+* ```go
+func (r *Router) Merge(path string, router Router) to merge router on a specific path
+```
+* ```go
+router.PanicHandler
+```
