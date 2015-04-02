@@ -185,9 +185,9 @@ func main() {
 ```
 
 ### TODO
-* ```go
+```go
 func (r *Router) Merge(path string, router Router) to merge router on a specific path
 ```
-* ```go
+```go
 router.PanicHandler
 ```
