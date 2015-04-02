@@ -137,7 +137,9 @@ type SimpleHandler struct {
 	message string
 }
 
-func (h *SimpleHandler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
+func (h *SimpleHandler) ServeHTTP(response http.ResponseWriter,
+	request *http.Request) {
+	
 	response.WriteHeader(h.code)
 	response.Write([]byte(h.message))
 }
@@ -148,7 +150,9 @@ type MultiParamsHandler struct {
 	paramsNames []string
 }
 
-func (h *MultiParamsHandler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
+func (h *MultiParamsHandler) ServeHTTP(response http.ResponseWriter,
+	request *http.Request) {
+	
 	buffer := bytes.NewBufferString(h.message)
 	for _, paramName := range h.paramsNames {
 		buffer.WriteString(" ")
@@ -172,13 +176,17 @@ func main() {
 	router.NotFound = &SimpleHandler{404, "404 Not Found"}
 	router.MethodNotAllowed = &SimpleHandler{405, "405 Method Not Allowed"}
 
-	router.HandleFunc("GET", "/users", func(response http.ResponseWriter, request *http.Request) {
+	router.HandleFunc("GET", "/users", func(response http.ResponseWriter,
+		request *http.Request) {
+		
 		response.WriteHeader(200)
 		response.Write([]byte("/users endpoint"))
 	})
-	router.Handle("GET", "/users/0", &SimpleHandler{200, "/users/0 endpoint matching the specific id = 0"})
+	router.Handle("GET", "/users/0", &SimpleHandler{200,
+		"/users/0 endpoint matching the specific id = 0"})
 	router.HandleFunc("GET", "/users/:id", UserHandlerFunc)
-	router.Handle("GET", "/users/:id/:param", &MultiParamsHandler{200, "/users/:id/:param endpoint with", []string{"id", "param"}})
+	router.Handle("GET", "/users/:id/:param", &MultiParamsHandler{200, 
+		"/users/:id/:param endpoint with", []string{"id", "param"}})
 
 	http.ListenAndServe(":8080", router)
 }
@@ -186,8 +194,10 @@ func main() {
 
 ### TODO
 ```go
-func (r *Router) Merge(path string, router Router) to merge router on a specific path
+// Merge adds all paths from router to r on specific path
+func (r *Router) Merge(path string, router Router)
 ```
 ```go
+// InternalServerError handler
 router.PanicHandler
 ```
